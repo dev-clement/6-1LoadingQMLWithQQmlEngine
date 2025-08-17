@@ -1,0 +1,354 @@
+= Loading QML using QQmlEngine on C++
+In this article we're going to see how we can manipulate QML object onto the Cpp of the app
+
+:toc:
+:sectnums:
+:imagesdir: assets/images/
+
+== Introduction
+I should say that it isn't the natural way of doing things, however, as this article is more for learning purposes, we should be aware of the possibility...
+
+So in this article and project, we'll focus on doing an object on the QML side of the app in the .qml file:
+
+```cpp
+Item {
+    objectName: "My root item"
+    Item {
+        id: child1
+        objectName: "Child1"
+        property int age: 13
+        property string name: "Backer"
+    }
+    
+    Rectangle {
+        id: child1RectId
+        objectName: "child1Rect"
+        width: 200
+        height: 300
+        color: "green"
+    }
+    ...
+}
+```
+So the QML file will go something like this, and using this QML file, we'll be able to manipulate those items from the Cpp side of the app.
+
+NOTE: As you can see, there is `Item` or other objects with `objectName`. Those `objectName` are kind of identifier for the objects in order to query them from the Cpp side.
+
+IMPORTANT: The idea of this aml file is that to show you that you can nest element onto other elements. And you'll be able to access those tree elements from the QML side and read any property that you were interested in. 
+
+== Step to consume QML on the Cpp side
+In order to consume the QML side of the app on the Cpp side, you'll first need to create an engine and setting up:
+
+=== Setting up an engine
+First, you'll need to setup an engine on the Cpp side, so you'll have to do something like this:
+
+```cpp
+QQmlEngine o_engine;
+```
+
+After that line, you'll also have to create the component that will contains your qml file:
+
+```cpp
+QQmlComponent o_component{o_engine, "qrc:/qml/Main.qml"};
+```
+
+After that `QQmlComponent` creation, you'll then has to create the root context of that qml:
+
+```cpp
+QObject *po_rootObject = o_component.create(nullptr);
+```
+
+NOTE: The QQmlComponent::create method will create an object instance of the given component, whithin the specified context. If the context is set as nullptr (default value), it will create an instance of the root context of the engine.
+
+=== QML root context
+The root context is automatically created by the link:https://doc.qt.io/qt-6/qqmlengine.html[QQmlEngine]. Data that should be available to all QML component instances instantiated by the engine should be put in the root context.
+
+NOTE: Additionnal data that should only be available to a subset of component instances should be added to sub-contexts parented to the root context.
+
+=== Fetching component from the context
+Once you've retrieved the root context using the create from the `QQmlComponent` class, you'll then be able to query some of the child component of that context:
+
+==== Find one child by object name
+
+```cpp
+QObject *po_child = po_rootObject->findChild<QObject *>("Child1");
+```
+
+Using the object name named `Child1` you'll be able to retrieve an object inside of your qml file.
+
+==== Find children by object name
+
+```cpp
+QList<QObject *> o_children = po_rootObject->findChildren<QObject *>("Child2");
+```
+
+Using this method will return you a list of object with the object named passed as parameter. If there is no such children with the given object name, an empty list is returned !
+
+IMPORTANT: In order to get the root object from the `QQmlComponent` class, you'll have to set your qml file as a resource to your application.
+
+=== Finding childs
+Using the `QObject::findChild` or even `QObject::findChildren` will let you find another QObject from the hierarchy using its object name. That's why we set the `objectName` property from the QML side of the application.
+
+NOTE: When you're using `rootObject->findChildren` instead of `rootObject->findChild`, you'll be able to pass parameter to the method to know if whether you want to find the child recursively or not !
+
+```
+QList<QObject *> o_listOfChildren = po_rootObject->findChildren("Child2", Qt::FindChildrenRecursively);
+```
+
+NOTE: By default, the method `QObject::findChildren` will set the second parameter as `Qt::FindChildrenRecursively`, if you want to find on an iterative way, set it to `Qt::FindDirectChildrenOnly`
+
+=== Read or write to object
+Once you've get the object on the Cpp side of the application, you can either read or write to the object using the followings methods:
+
+==== Reading from the object
+```cpp
+// Syntax 1
+QQmlProperty::read(child1, "age").toInt();
+
+// Syntax2
+child1->property("age").toInt();
+```
+
+NOTE: The the example above, we want to read the property named `age` of the component named `child1` and convert it to integer to fetch the age's value.
+
+==== Writing to the object
+Once you've read from the object, you should also note that you may need to write to the object like this:
+
+```cpp
+// Syntax 1
+item->setProperty("height", QVariant::fromValue(600));
+
+// Syntax 2
+QQmlProperty::write(item, "height", QVariant::fromValue(600));
+```
+
+== Project
+This repository will contains this article as well as a project linked to it.
+
+IMPORTANT: This article isn't going to be a casual QtQuick application, instead, it will be a console application.
+
+=== Editing the run configuration
+Once you've created your console application, you should then went to the run configuration inside of your Projects settings, and then click on the "Run in terminal" checkbox:
+
+image::projectConfig.png[]
+
+=== Adding QML to the project
+Now that we have a console application, we didn't have QML installed in the module, we'll add QML inside of the application using the cmake `find_package` command like this:
+
+```cmake
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
+```
+
+So as you can see above, we are loading the Core components from the Qt version of the application, as we want to make use of QML, we will add some other package inside these lines:
+
+```cmake
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Qml)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Qml)
+```
+
+So now you'll have enough packages found to run your application, although you need to link your application to those using the target_link_libraries:
+
+```cmake
+target_link_libraries(${TARGET_NAME}
+  Qt${QT_VERSION_MAJOR}::Core
+  Qt${QT_VERSION_MAJOR}::Gui
+  Qt${QT_VERSION_MAJOR}::Qml
+)
+```
+
+NOTE: The `TARGET_NAME` is created inside of the root `CMakeLists.txt` before the `project` creation:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+
+set(TARGET_NAME LoadingQMLWithQQmlEngine)
+
+project(${TARGET_NAME} LANGUAGES CXX)
+
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Qml)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Qml)
+
+add_subdirectory(main/)
+```
+
+=== Adding the QML file
+Now that we create our cmake and we know exactly how we can query the element from the QML to the Cpp side of the app, we now want to put the QML file, but we want to put it on the resource system, in order to create something like this:
+
+```cpp
+QQmlComponent o_component{o_engine, "qrc:/qml/Main.qml"};
+```
+
+So first, we will need to create a resource file in your cmake project. 
+
+image::treeStructure.png[]
+
+The `add_executable` inside of the `CMakeLists.txt` will look like the followings:
+
+```cmake
+add_executable(${TARGET_NAME}
+  src/main.cpp
+  qml.qrc
+)
+```
+
+NOTE: CMake should do it directly once you've created the resource file from the QtCreator wizard.
+
+Now that we create the resource file, you'll be able to add the qml file into it. Then it should look like this:
+
+image::treeStructureWithQMLResources.png[]
+
+And inside of the `main.qml` file, there will be something like this:
+
+```qml
+import QtQuick
+
+Item {
+    objectName: "My Root Item";
+    Item{
+        id : child1
+        objectName: "Child1"
+        property int age: 13
+        property string names: "Steve Barker"
+    }
+    Rectangle{
+        id : chilRect
+        objectName: "childRect"
+        width: 200
+        height: 300
+        color: "green"
+    }
+    Item{
+        id : child2
+        objectName: "Child2"
+        property string car: "Peugeot"
+    }
+    Item{
+        id : child3
+        objectName: "Child2"
+        property string car: "Ford"
+    }
+    Item{
+        id : child4
+        objectName: "deepChild"
+        property string level : "level1";
+        Item{
+            objectName: "deepChild"
+            property string level: "level2"
+            Item{
+                objectName: "deepChild"
+                property string level: "level3"
+            }
+        }
+    }
+    Item{
+        id : child5
+        objectName: "deepChild"
+        property string level : "level1clone";
+
+    }
+}
+```
+
+IMPORTANT: After all what we've done in this project, we are going to be able to read data from the qml file in our Cpp application.
+
+== Implementation
+Now, we will modify our project in order to do the following:
+
+=== Create the root object
+We are going to create our root object, that means instantiate our engine, loading the resource file (the qml file) and retrieve the root context from the component that we use to load the qml file:
+
+```cpp
+int main(int argc, char *argv[])
+{
+    QCoreApplication o_app{argc, argv};
+
+    QQmlEngine o_engine;
+    QQmlComponent o_component{&o_engine, "qrc:/qml/main.qml"};
+    QObject *po_rootObject = o_component.create(nullptr);
+
+    return o_app.exec();
+}
+```
+
+In the snippet above, we are creating a new engine, and a component that take the engine's address and the qml file, the qml file will let the component to have access to its content, then using this component, we'll be able to create the root object. 
+
+NOTE: The root object will be at the topmost of the qml file, that means we'll be able to access to any other component that is present in the qml file.
+
+=== Reading from the root object
+Now that you've retrieved the `rootObject` from the `QQmlComponent`, you'll be able to get values from the qml file:
+
+```cpp
+int main(int argc, char *argv[])
+{
+    ...
+
+    ...
+    ...
+    QObject *po_rootObject = o_component.create(nullptr);
+
+    // Print the object name of the root element
+    qDebug() << po_rootObject->objectName() << "\n";
+    ...
+}
+```
+The output of this application will return the following:
+
+image::projectOutput.png[]
+
+You can also getting the number of children the root object has:
+
+```cpp
+int main(int argc, char *argv[])
+{
+    ...
+
+    ...
+    ...
+    ...
+
+    // Print the object name of the root element
+    qDebug() << po_rootObject->objectName() << "\n";
+    qDebug() << "Object has " << po_rootObject->children().size() << " children !";
+    ...
+}
+```
+
+Output of this method will be:
+
+image::numberOfChildren.png[]
+
+=== Accessing child of the root object
+After you query the root object, you'll be able to see child and their values.
+
+In order to do so, let's look at the item with the objectName named `Child1`, you will be able to do so using this:
+
+```cpp
+// Read child1
+QObject *o_child1 = po_rootObject->findChild<QObject *>("Child1");
+
+if (o_child1) {
+    qDebug() << "Child1 age is: " << QQmlProperty::read(o_child1, "age").toInt();
+    qDebug() << "Child1 age is: " << o_child1->property("age").toInt();
+}
+```
+
+You can also querying the name using:
+
+```cpp
+// Read child1
+const auto *po_child1 = po_rootObject->findChild<QObject *>("Child1");
+
+if (po_child1) {
+    qDebug() << "Child1 age is: " << QQmlProperty::read(po_child1, "age").toInt();
+    qDebug() << "Child1 age is: " << po_child1->property("age").toInt();
+    qDebug() << "Name is: " << po_child1->property("names").toString();
+}
+```
